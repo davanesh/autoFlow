@@ -1,7 +1,16 @@
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+import WorkflowBuilder from "./pages/WorkflowBuilder";
+import Dashboard from "./pages/Dashboard";
+
 export default function App() {
   return (
-    <div className="flex h-screen items-center justify-center bg-blue-500 text-white text-3xl font-bold">
-      Tailwind is Working 🎉
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/builder" element={<WorkflowBuilder />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
