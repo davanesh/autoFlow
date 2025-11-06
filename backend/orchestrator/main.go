@@ -1,11 +1,15 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
+
+	"github.com/Davanesh/auto-orchestrator/internal/api"
+	"github.com/Davanesh/auto-orchestrator/internal/db"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
+    db.InitMongo()
 	r := gin.Default()
 	
 	r.GET("/", func(c *gin.Context) {
@@ -13,5 +17,6 @@ func main() {
             "message": "AutoFlow.AI Orchestrator is running",
         })
     })
+    api.RegisterWorkflowRoutes(r)
     r.Run(":8080")
 }
