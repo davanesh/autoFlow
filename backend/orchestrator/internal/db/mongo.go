@@ -9,20 +9,29 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var Client *mongo.Client
+var client *mongo.Client
 
-func InitMongo() {
+func InitDB() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	uri := "mongodb://localhost:27017" // or your Atlas connection string
+	clientOptions := options.Client().ApplyURI(uri)
+
+	var err error
+	client, err = mongo.Connect(ctx, clientOptions)
 	if err != nil {
-		log.Fatal("MongoDB Connection Error:", err)
+		log.Fatal(err)
 	}
-	Client = client
-	log.Println("✅ Connected to MongoDB")
+
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatal("MongoDB connection failed:", err)
+	}
+
+	log.Println("✅ Connected to MongoDB successfully!")
 }
 
 func GetCollection(name string) *mongo.Collection {
-	return Client.Database("autoflow_ai").Collection(name)
+	return client.Database("auto_orchestrator").Collection(name)
 }

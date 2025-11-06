@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-    db.InitMongo()
+    db.InitDB()
 	r := gin.Default()
 	
 	r.GET("/", func(c *gin.Context) {
@@ -18,5 +18,6 @@ func main() {
         })
     })
     api.RegisterWorkflowRoutes(r)
+    // r.POST("/workflows/:id/run", api.RunWorkflow)
     r.Run(":8080")
 }
