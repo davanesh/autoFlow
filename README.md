@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="#">⭐ Star this repo</a> ·
-  <a href="#">📦 Contribute</a> ·
-  <a href="#">🐞 Report Bug</a> ·
-  <a href="#">✨ Request Feature</a>
+  <a href="https://github.com/Davanesh/autoFlow">⭐ Star this repo</a> ·
+  <a href="https://github.com/Davanesh/autoFlow/issues">📦 Contribute</a> ·
+  <a href="https://github.com/Davanesh/autoFlow/issues/new?labels=bug&template=bug_report.md">🐞 Report Bug</a> ·
+  <a href="https://github.com/Davanesh/autoFlow/issues/new?labels=feature&template=feature_request.md">✨ Request Feature</a>
 </p>
 
 ---
@@ -86,3 +86,4 @@ go run main.go
 cd frontend
 npm install
 npm run dev
+
