@@ -1,35 +1,65 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
-	"math/rand"
 	"time"
 
-	"github.com/Davanesh/auto-orchestrator/internal/models"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 )
 
-// SimulateLambda simulates the execution of an AWS Lambda function.
-func SimulateLambda(taskName string, workflowID string) models.ExecutionLog {
-	time.Sleep(1 * time.Second) // simulate processing delay
+// LambdaInvoker holds the AWS Lambda client
+type LambdaInvoker struct {
+	client *lambda.Client
+}
 
-	success := rand.Float32() > 0.1 // 90% success rate
-	status := "completed"
-	desc := fmt.Sprintf("Lambda %s executed successfully.", taskName)
+// NewLambdaInvoker initializes and returns a LambdaInvoker.
+// It loads credentials from the environment/`~/.aws/credentials` (aws configure).
+func NewLambdaInvoker() (*LambdaInvoker, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	if !success {
-		status = "failed"
-		desc = fmt.Sprintf("Lambda %s failed during execution.", taskName)
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	return models.ExecutionLog{
-		WorkflowID:  workflowID,
-		TaskName:    taskName,
-		Status:      status,
-		Timestamp:   time.Now(),
-		Description: desc,
-		Details: map[string]interface{}{
-			"functionType": "AWS Lambda Simulation",
-			"duration":     fmt.Sprintf("%dms", 1000+rand.Intn(500)),
-		},
+	return &LambdaInvoker{
+		client: lambda.NewFromConfig(cfg),
+	}, nil
+}
+
+// Invoke invokes a Lambda function by name with a payload (any serializable object).
+// Returns the raw payload bytes and the function error (if any).
+func (li *LambdaInvoker) Invoke(functionName string, payload interface{}) ([]byte, error) {
+	// Marshal the payload to JSON
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
+
+	input := &lambda.InvokeInput{
+		FunctionName: &functionName,
+		Payload:      body,
+		// You can set InvocationType: types.InvocationTypeRequestResponse for sync (default)
+		InvocationType: types.InvocationTypeRequestResponse,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	out, err := li.client.Invoke(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("lambda invoke error: %w", err)
+	}
+
+	// If the Lambda returned an error (FunctionError set), include that in returned error
+	if out.FunctionError != nil && *out.FunctionError != "" {
+		return out.Payload, fmt.Errorf("lambda function error: %s", *out.FunctionError)
+	}
+
+	return out.Payload, nil
 }

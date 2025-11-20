@@ -34,24 +34,21 @@ type Task struct {
 
 // Node represents a canvas node (frontend ID is preserved in CanvasID)
 type Node struct {
-	// CanvasID is the frontend node id (e.g. React Flow node id)
-	CanvasID string `bson:"canvasId,omitempty" json:"id,omitempty"`
-
-	Type     string                 `bson:"type" json:"type"`
-	Label    string                 `bson:"label,omitempty" json:"label,omitempty"`
-	Position map[string]float64     `bson:"position,omitempty" json:"position,omitempty"` // {x:..., y:...}
-	Data     map[string]interface{} `bson:"data,omitempty" json:"data,omitempty"`         // metadata, lambda name, etc.
-	Status   string                 `bson:"status,omitempty" json:"status,omitempty"`
+	CanvasID   string                 `bson:"canvasId,omitempty" json:"id,omitempty"`
+	Type       string                 `bson:"type" json:"type"`
+	Label      string                 `bson:"label,omitempty" json:"label,omitempty"`
+	Position   map[string]float64     `bson:"position,omitempty" json:"position,omitempty"`
+	Data       map[string]interface{} `bson:"data,omitempty" json:"data,omitempty"`
+	Status     string                 `bson:"status,omitempty" json:"status,omitempty"`
+	LambdaName string                 `bson:"lambdaName,omitempty" json:"lambdaName,omitempty"`
 }
 
 // Connection (edge) between nodes
 type Connection struct {
 	// CanvasID is the frontend connection id (if available)
-	CanvasID string                 `bson:"canvasId,omitempty" json:"id,omitempty"`
-	Source string `bson:"source" json:"source"`
-	Target string `bson:"target" json:"target"`
-	Meta     map[string]interface{} `bson:"metadata,omitempty" json:"metadata,omitempty"`
+	CanvasID string `bson:"canvasId,omitempty" json:"id,omitempty"`
+
+	Source string                 `bson:"source" json:"source"`
+	Target string                 `bson:"target" json:"target"`
+	Meta   map[string]interface{} `bson:"metadata,omitempty" json:"metadata,omitempty"`
 }
-
-// ExecutionLog represents a single execution event for observability
-

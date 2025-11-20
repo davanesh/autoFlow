@@ -22,7 +22,7 @@ func RegisterWorkflowRoutes(r *gin.Engine) {
 	r.POST("/workflows", CreateWorkflow)
 	r.PUT("/workflows/:id", UpdateWorkflowStatus)
 	r.POST("/workflows/:id/run", RunWorkflow)
-	r.PUT("/workflows/:id/structure", SaveWorkflowStructure) // ✅ new route
+	r.PUT("/workflows/:id/structure", SaveWorkflowStructure)
 }
 
 // ---------------- UPDATE STATUS ----------------
@@ -42,7 +42,6 @@ func UpdateWorkflowStatus(c *gin.Context) {
 
 	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		log.Println("❌ Invalid ID format:", id)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
@@ -51,27 +50,21 @@ func UpdateWorkflowStatus(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	filter := bson.M{"_id": objectID}
 	update := bson.M{"$set": bson.M{"status": body.Status}}
 
-	result, err := collection.UpdateOne(ctx, filter, update)
+	result, err := collection.UpdateOne(ctx, bson.M{"_id": objectID}, update)
 	if err != nil {
-		log.Println("❌ Update error:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	if result.MatchedCount == 0 {
-		log.Println("⚠️ No workflow found for ID:", id)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
 		return
 	}
 
-	log.Println("✅ Workflow status updated:", id, "->", body.Status)
-
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Workflow status updated successfully",
-		"id":      id,
+		"message": "Status updated",
 		"status":  body.Status,
 	})
 }
@@ -83,23 +76,18 @@ func GetWorkflows(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	log.Println("📦 Fetching all workflows from MongoDB...")
-
 	cursor, err := collection.Find(ctx, bson.M{})
 	if err != nil {
-		log.Println("❌ Error fetching workflows:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	var workflows []models.Workflow
 	if err := cursor.All(ctx, &workflows); err != nil {
-		log.Println("❌ Cursor decode error:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Printf("✅ Found %d workflows\n", len(workflows))
 	c.JSON(http.StatusOK, workflows)
 }
 
@@ -107,9 +95,9 @@ func GetWorkflows(c *gin.Context) {
 
 func CreateWorkflow(c *gin.Context) {
 	var wf models.Workflow
+
 	if err := c.BindJSON(&wf); err != nil {
-		log.Println("❌ Invalid JSON for workflow:", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow JSON"})
 		return
 	}
 
@@ -120,26 +108,21 @@ func CreateWorkflow(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	log.Println("🧠 Inserting new workflow into MongoDB:", wf.Name)
-
 	result, err := collection.InsertOne(ctx, wf)
 	if err != nil {
-		log.Println("❌ Insert error:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	wf.ID = result.InsertedID.(primitive.ObjectID)
-
-	log.Println("✅ Workflow inserted successfully with ID:", wf.ID.Hex())
-
 	c.JSON(http.StatusCreated, wf)
 }
 
-// ---------------- RUN WORKFLOW ----------------
+// ---------------- RUN WORKFLOW (REAL LAMBDA INVOKE) ----------------
 
 func RunWorkflow(c *gin.Context) {
 	id := c.Param("id")
+
 	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow ID"})
@@ -147,10 +130,8 @@ func RunWorkflow(c *gin.Context) {
 	}
 
 	collection := db.GetCollection("workflows")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	log.Println("⚙️ Fetching workflow to execute:", id)
 
 	var wf models.Workflow
 	if err := collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf); err != nil {
@@ -158,55 +139,90 @@ func RunWorkflow(c *gin.Context) {
 		return
 	}
 
+	// Lambda client
+	lambdaInvoker, err := services.NewLambdaInvoker()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize AWS Lambda client"})
+		return
+	}
+
 	logCollection := db.GetCollection("execution_logs")
 	results := []models.ExecutionLog{}
 
+	// Execute the workflow sequentially
 	for i, node := range wf.Nodes {
-		taskName := node.Type
-		log.Printf("🚀 [Lambda] Invoking function: %s\n", taskName)
 
-		// Insert "running" log
+		if node.LambdaName == "" {
+			log.Println("⚠️ Node missing lambdaName field:", node.CanvasID)
+			continue
+		}
+
+		taskName := node.LambdaName
+		log.Printf("🚀 Invoking Lambda: %s\n", taskName)
+
+		// Create "running" log
 		runningLog := models.ExecutionLog{
 			WorkflowID:  wf.ID.Hex(),
 			TaskName:    taskName,
 			Status:      "running",
 			Timestamp:   time.Now(),
-			Description: fmt.Sprintf("Lambda %s started execution.", taskName),
+			Description: fmt.Sprintf("Lambda %s started", taskName),
 		}
-		_, _ = logCollection.InsertOne(ctx, runningLog)
+		logCollection.InsertOne(ctx, runningLog)
 
-		// Simulate AWS Lambda run
-		execLog := services.SimulateLambda(taskName, wf.ID.Hex())
-		_, _ = logCollection.InsertOne(ctx, execLog)
+		// Payload sent to actual Lambda
+		payload := map[string]interface{}{
+			"workflowId": wf.ID.Hex(),
+			"node":       node,
+			"time":       time.Now().Unix(),
+		}
 
-		wf.Nodes[i].Status = execLog.Status
+		respPayload, invokeErr := lambdaInvoker.Invoke(taskName, payload)
+
+		// Log result
+		var execLog models.ExecutionLog
+
+		if invokeErr != nil {
+			execLog = models.ExecutionLog{
+				WorkflowID:  wf.ID.Hex(),
+				TaskName:    taskName,
+				Status:      "failed",
+				Timestamp:   time.Now(),
+				Description: invokeErr.Error(),
+			}
+		} else {
+			execLog = models.ExecutionLog{
+				WorkflowID:  wf.ID.Hex(),
+				TaskName:    taskName,
+				Status:      "completed",
+				Timestamp:   time.Now(),
+				Description: string(respPayload),
+			}
+		}
+
+		logCollection.InsertOne(ctx, execLog)
 		results = append(results, execLog)
 
-		log.Printf("✅ [Lambda] %s: %s\n", execLog.TaskName, execLog.Description)
+		wf.Nodes[i].Status = execLog.Status
 	}
 
-	// Update overall workflow status
+	// Final workflow status
 	wf.Status = "completed"
-	if _, err := collection.UpdateOne(ctx, bson.M{"_id": objectID}, bson.M{"$set": wf}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	log.Println("🎯 Workflow completed successfully:", wf.ID.Hex())
+	collection.UpdateOne(ctx, bson.M{"_id": objectID}, bson.M{"$set": wf})
 
 	c.JSON(http.StatusOK, gin.H{
-		"workflowId": wf.ID.Hex(),
-		"status":     wf.Status,
-		"results":    results,
+		"workflow": wf.ID.Hex(),
+		"status":   wf.Status,
+		"results":  results,
 	})
 }
-
 
 // ---------------- SAVE WORKFLOW STRUCTURE ----------------
 
 func SaveWorkflowStructure(c *gin.Context) {
 	id := c.Param("id")
 	objectID, err := primitive.ObjectIDFromHex(id)
+
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow ID"})
 		return
@@ -218,7 +234,7 @@ func SaveWorkflowStructure(c *gin.Context) {
 	}
 
 	if err := c.BindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
@@ -226,21 +242,20 @@ func SaveWorkflowStructure(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	update := bson.M{
-		"$set": bson.M{
-			"nodes":       body.Nodes,
-			"connections": body.Connections,
-			"updatedAt":   time.Now(),
-		},
-	}
+	update := bson.M{"$set": bson.M{
+		"nodes":       body.Nodes,
+		"connections": body.Connections,
+	}}
 
 	_, err = collection.UpdateOne(ctx, bson.M{"_id": objectID}, update)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save structure"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Workflow structure updated successfully",
+		"message": "Workflow structure updated",
+		"id":      id,
 	})
 }
