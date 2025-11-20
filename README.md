@@ -1,139 +1,89 @@
-# ⚙️ AutoFlow.AI
+<h1 align="center">⚡ AutoFlow.AI — Smart Workflow Orchestrator</h1>
 
-AutoFlow.AI is a **smart workflow orchestration platform** designed to automate, optimize, and visualize backend processes — powered by **Go microservices**, **AWS Cloud**, and **AI-driven automation**.
+<p align="center">
+  <img 
+    src="https://github.com/user-attachments/assets/18d2303e-230c-4637-9910-c87168edfed4"
+    alt="AutoFlow Banner"
+    width="900"
+  />
+</p>
+
+<p align="center">
+  <strong>The modern, open-source workflow engine for developers building automated systems on Go, AWS, and React.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Davanesh/autoFlow">⭐ Star this repo</a> ·
+  <a href="https://github.com/Davanesh/autoFlow/issues">📦 Contribute</a> ·
+  <a href="https://github.com/Davanesh/autoFlow/issues/new?labels=bug&template=bug_report.md">🐞 Report Bug</a> ·
+  <a href="https://github.com/Davanesh/autoFlow/issues/new?labels=feature&template=feature_request.md">✨ Request Feature</a>
+</p>
 
 ---
 
-## 🚀 Features
+## 🔥 What is AutoFlow.AI?
+AutoFlow.AI is a **workflow automation engine** that lets you design, run, and manage workflows using:
 
-- 🧩 **Drag-and-Drop Workflow Builder**
-  - Build and connect tasks visually on an interactive canvas (React-based).
-- ⚙️ **Go Microservices**
-  - Backend engine written in Go for performance, scalability, and clean concurrency.
-- ☁️ **AWS Integration**
-  - Simulate and deploy workflows using AWS Lambda, ECS, and Step Functions.
-- 🧠 **AI Optimization**
-  - Intelligent suggestions for workflow efficiency and resource optimization.
-- 🔐 **Secure Backend**
-  - JWT-based authentication and role-based access management.
-- 📊 **Real-Time Logs**
-  - Monitor workflow executions and view live logs with MongoDB and WebSocket updates.
+- ⚙️ **Go microservices**
+- ☁️ **AWS Lambda, Step Functions, ECS**
+- 🧠 **AI-assisted optimization**
+- 🎛️ **React drag-and-drop workflow builder**
+- 📐 **Modular & production-ready architecture**
+
+Think of it like:
+> “If **Google Cloud Workflows**, **n8n**, and **AWS Step Functions** had a baby that looks cool and works locally too.”
+
+---
+
+## 🎥 Demo (UI Preview)
+
+<p align="center">
+  <strong>demo video</strong><br/><br/>
+  <a href="https://github.com/user-attachments/assets/a8baeaa3-d274-4186-a4cb-ee4bdc328073">
+    ▶️ Watch Demo Video
+  </a>
+</p>
+
+---
+
+## 🧠 Features
+- 🧩 Drag-and-drop workflow builder  
+- ⚡ Real-time workflow execution logs  
+- 🔗 Node-based visual flow system  
+- 🔐 JWT-secured backend in Go  
+- ☁️ Native AWS integrations  
+- 💬 AI suggestions for workflow optimization  
+- 📚 Version-controlled flows  
+- 🌍 Fully open-source, easy to extend
 
 ---
 
 ## 🏗️ Tech Stack
 
-### **Frontend**
-- React.js + Tailwind CSS  
-- Redux Toolkit for State Management  
-- Canvas-based workflow builder  
-- Axios for API communication  
-
-### **Backend**
-- Go (Golang)  
-- Gin / Fiber Framework  
-- MongoDB Atlas  
-- AWS SDK for Go  
-- JSON Web Tokens (JWT)  
-- REST API Architecture  
-
-### **Cloud & DevOps**
-- AWS Lambda, ECS, Step Functions  
-- Terraform for IaC  
-- Docker for containerization  
-- CloudWatch for monitoring  
+| Area | Tech |
+|------|------|
+| Frontend | React, Zustand, Tailwind |
+| Backend | Go + Fiber (Chi support planned) |
+| Cloud | AWS (Lambda, Step Functions, S3, ECS) |
+| Infra | Terraform |
+| Auth | JWT or Firebase |
+| Database | MongoDB (DynamoDB optional) |
 
 ---
 
-## 🧩 Architecture Overview
+## 🚀 Getting Started
 
-```text
-Frontend (React + Redux)
-        ↓
-Gateway API (Go)
-        ↓
-Workflow Engine (Go Microservice)
-        ↓
-Task Executors (Lambda / Local Simulated)
-        ↓
-Database (MongoDB Atlas)
-```
-
----
-
-## 🧠 AI Automation Concept
-
-The system analyzes workflows and:
-- Suggests **optimized task ordering**
-- Automates **retry logic and scaling**
-- Can be extended to handle **auto-email or message responses** based on triggers
-
----
-
-## 🧪 Local Development Setup
-
-### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/Davanesh/autoflow.git
-cd autoflow
-```
+# 1. Clone repo
+git clone https://github.com/Davanesh/autoFlow
 
-### 2️⃣ Backend Setup
-```bash
-cd backend
-cd orchestrator
+# 2. Install backend deps
+cd backend/orchestrator
+go mod tidy
 go run main.go
-```
 
-### 3️⃣ Frontend Setup
-```bash
+# 3. Start frontend
 cd frontend
 npm install
 npm run dev
-```
 
-### 4️⃣ Environment Variables
-Create `.env` files for both backend and frontend.
-
-**Backend .env**
-```
-PORT=8080
-MONGO_URI=your_mongo_atlas_uri
-JWT_SECRET=your_secret_key
-AWS_REGION=ap-south-1
-```
-
-**Frontend .env**
-```
-VITE_API_URL=http://localhost:8080
-```
-
----
-
-## 🛠️ Roadmap
-
-| Phase | Goal | Status |
-|-------|------|--------|
-| 1 | Backend core (Go microservices + MongoDB) | ✅ Done |
-| 2 | Frontend Canvas Builder (React) | ✅ Done |
-| 3 | Lambda / Step Functions Simulation | 🔄 In progress |
-| 4 | AI Workflow Optimizer | ⏳ Planned |
-| 5 | AWS Deployment + Terraform Setup | ⏳ Planned |
-
----
-
-## 🤝 Contributing
-Pull requests are welcome! For major changes, please open an issue first to discuss what you’d like to change.
-
----
-
-## 📜 License
-This project is licensed under the **MIT License**.
-
----
-
-## 👨‍💻 Author
-**Davanesh S**  
-🚀 Full Stack Developer | Cloud & AI Enthusiast  
-🌐 [Portfolio](https://davanesh.vercel.app/)  
-💼 [LinkedIn](https://www.linkedin.com/in/davanesh-saminathan/)  
