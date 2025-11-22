@@ -3,7 +3,6 @@ package services
 import (
 	"errors"
 	"log"
-	"time"
 )
 
 
@@ -33,20 +32,12 @@ func RunWorkflow(g *ExecGraph) error {
 		var nextOverride string
 		var err error
 
-		// Pick node type
-		switch n.Type {
-		case "start":
-			err = executeStart(n)
-
-		case "task":
-			err = executeTask(n)
-
-		case "decision":
-			nextOverride, err = executeDecision(n)
-
-		default:
-			return errors.New("unknown node type: " + n.Type)
+		executor, err := GetExecutor(n.Type)
+		if err != nil {
+				return errors.New("no executor for node type: " + n.Type)
 		}
+
+		nextOverride, err = executor.Execute(n, g)
 
 		if err != nil {
 			n.Status = "failed"
@@ -73,48 +64,4 @@ func RunWorkflow(g *ExecGraph) error {
 
 		current = n.Next[0]
 	}
-}
-
-/*
-----------------------------------------------------
-    NODE EXECUTORS
-----------------------------------------------------
-*/
-
-func executeStart(n *ExecNode) error {
-	log.Printf("🟢 Start: %s", n.Label)
-	n.Status = "done"
-	return nil
-}
-
-func executeTask(n *ExecNode) error {
-	log.Printf("🟡 Running task: %s", n.Label)
-
-	n.Status = "running"
-	time.Sleep(1 * time.Second) // simulate work
-
-	n.Status = "done"
-	log.Printf("✅ Task completed: %s", n.Label)
-	return nil
-}
-
-func executeDecision(n *ExecNode) (string, error) {
-	log.Printf("🟣 Decision: %s", n.Label)
-
-	cond, ok := n.Data["condition"].(string)
-	if !ok {
-		return "", errors.New("decision node missing 'condition'")
-	}
-
-	if len(n.Next) < 2 {
-		return "", errors.New("decision node must have 2+ branches")
-	}
-
-	if cond == "yes" {
-		log.Println("➡️ Decision: YES branch")
-		return n.Next[0], nil
-	}
-
-	log.Println("➡️ Decision: NO branch")
-	return n.Next[1], nil
 }
