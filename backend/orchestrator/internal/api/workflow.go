@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -118,7 +117,7 @@ func CreateWorkflow(c *gin.Context) {
 	c.JSON(http.StatusCreated, wf)
 }
 
-// ---------------- RUN WORKFLOW (REAL LAMBDA INVOKE) ----------------
+// ---------------- RUN WORKFLOW (NEW ENGINE) ----------------
 
 func RunWorkflow(c *gin.Context) {
 	id := c.Param("id")
@@ -130,92 +129,114 @@ func RunWorkflow(c *gin.Context) {
 	}
 
 	collection := db.GetCollection("workflows")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
+	// Load workflow from DB
 	var wf models.Workflow
 	if err := collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
 		return
 	}
 
-	// Lambda client
-	lambdaInvoker, err := services.NewLambdaInvoker()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize AWS Lambda client"})
+	// -------------------------------
+	// 1) Convert Workflow → ExecGraph
+	// -------------------------------
+
+	graph := services.ExecGraph{
+		Nodes: map[string]*services.ExecNode{},
+		Start: "",
+	}
+
+	// Build nodes
+	for _, n := range wf.Nodes {
+		execNode := &services.ExecNode{
+			ID:     n.CanvasID,
+			Type:   normalizeNodeType(n.Type),
+			Label:  n.Label,
+			Data:   n.Data,
+			Status: "pending",
+			Next:   []string{},
+		}
+		graph.Nodes[n.CanvasID] = execNode
+
+		if n.Type == "Start" || n.Type == "start" {
+			graph.Start = n.CanvasID
+		}
+	}
+
+	// Build edges (connections)
+	for _, c2 := range wf.Connections {
+		if node, exists := graph.Nodes[c2.Source]; exists {
+			node.Next = append(node.Next, c2.Target)
+		}
+	}
+
+	if graph.Start == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No start node defined"})
 		return
 	}
 
-	logCollection := db.GetCollection("execution_logs")
-	results := []models.ExecutionLog{}
+	// -------------------------------
+	// 2) Run workflow engine
+	// -------------------------------
 
-	// Execute the workflow sequentially
-	for i, node := range wf.Nodes {
+	log.Println("🔥 Running NEW EXECUTION ENGINE...")
 
-		if node.LambdaName == "" {
-			log.Println("⚠️ Node missing lambdaName field:", node.CanvasID)
-			continue
-		}
-
-		taskName := node.LambdaName
-		log.Printf("🚀 Invoking Lambda: %s\n", taskName)
-
-		// Create "running" log
-		runningLog := models.ExecutionLog{
-			WorkflowID:  wf.ID.Hex(),
-			TaskName:    taskName,
-			Status:      "running",
-			Timestamp:   time.Now(),
-			Description: fmt.Sprintf("Lambda %s started", taskName),
-		}
-		logCollection.InsertOne(ctx, runningLog)
-
-		// Payload sent to actual Lambda
-		payload := map[string]interface{}{
-			"workflowId": wf.ID.Hex(),
-			"node":       node,
-			"time":       time.Now().Unix(),
-		}
-
-		respPayload, invokeErr := lambdaInvoker.Invoke(taskName, payload)
-
-		// Log result
-		var execLog models.ExecutionLog
-
-		if invokeErr != nil {
-			execLog = models.ExecutionLog{
-				WorkflowID:  wf.ID.Hex(),
-				TaskName:    taskName,
-				Status:      "failed",
-				Timestamp:   time.Now(),
-				Description: invokeErr.Error(),
-			}
-		} else {
-			execLog = models.ExecutionLog{
-				WorkflowID:  wf.ID.Hex(),
-				TaskName:    taskName,
-				Status:      "completed",
-				Timestamp:   time.Now(),
-				Description: string(respPayload),
-			}
-		}
-
-		logCollection.InsertOne(ctx, execLog)
-		results = append(results, execLog)
-
-		wf.Nodes[i].Status = execLog.Status
+	err = services.RunWorkflow(&graph)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
-	// Final workflow status
+	// -------------------------------
+	// 3) Sync results back to DB
+	// -------------------------------
+
+	for i := range wf.Nodes {
+		if updated, ok := graph.Nodes[wf.Nodes[i].CanvasID]; ok {
+			wf.Nodes[i].Status = updated.Status
+		}
+	}
+
 	wf.Status = "completed"
-	collection.UpdateOne(ctx, bson.M{"_id": objectID}, bson.M{"$set": wf})
+
+	_, err = collection.UpdateOne(ctx, bson.M{"_id": objectID}, bson.M{
+		"$set": bson.M{
+			"nodes":  wf.Nodes,
+			"status": wf.Status,
+		},
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save updates"})
+		return
+	}
+
+	// -------------------------------
+	// 4) Response
+	// -------------------------------
 
 	c.JSON(http.StatusOK, gin.H{
-		"workflow": wf.ID.Hex(),
-		"status":   wf.Status,
-		"results":  results,
+		"workflowId": wf.ID.Hex(),
+		"status":     wf.Status,
+		"nodes":      wf.Nodes,
 	})
 }
+
+// Normalizes frontend type → backend type
+func normalizeNodeType(t string) string {
+	switch t {
+	case "Start", "start":
+		return "start"
+	case "Task", "task", "LambdaTask":
+		return "task"
+	case "Decision", "decision":
+		return "decision"
+	}
+	return "task"
+}
+
 
 // ---------------- SAVE WORKFLOW STRUCTURE ----------------
 

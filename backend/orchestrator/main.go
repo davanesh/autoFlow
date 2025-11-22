@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Davanesh/auto-orchestrator/internal/api"
@@ -34,4 +35,9 @@ func main() {
 
 	// Start server
 	r.Run(":8080")
+
+	// for debug
+	for _, ri := range r.Routes() {
+		fmt.Println(ri.Method, ri.Path)
+	}
 }
