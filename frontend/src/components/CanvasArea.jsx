@@ -74,7 +74,7 @@ export default function CanvasArea() {
     if (lineStartNode) {
       const startNode = nodes.find((n) => n.id === lineStartNode);
       if (startNode) {
-        const start = { x: startNode.x + startNode.width / 2, y: startNode.y + startNode.height / 2 };
+        const start = { x: startNode.x + (startNode.width || 160) / 2, y: startNode.y + (startNode.height || 64) / 2 };
         setTempLine({ x1: start.x, y1: start.y, x2: mouseX, y2: mouseY });
       }
     }
@@ -92,7 +92,7 @@ export default function CanvasArea() {
       const mouseX = (e.clientX - rect.left - pan.x) / zoom;
       const mouseY = (e.clientY - rect.top - pan.y) / zoom;
       const targetNode = nodes.find(
-        (n) => mouseX >= n.x && mouseX <= n.x + n.width && mouseY >= n.y && mouseY <= n.y + n.height && n.id !== lineStartNode
+        (n) => mouseX >= n.x && mouseX <= n.x + (n.width || 160) && mouseY >= n.y && mouseY <= n.y + (n.height || 64) && n.id !== lineStartNode
       );
       if (targetNode) setConnections((prev) => [...prev, { from: lineStartNode, to: targetNode.id, label: "" }]);
       setLineStartNode(null); setTempLine(null);
@@ -123,18 +123,24 @@ export default function CanvasArea() {
   const selectedNode = selectedNodeIds.length > 0 ? nodes.find((n) => n.id === selectedNodeIds[0]) : null;
 
   // -------------------- SAVE / LOAD --------------------
+  // Save payload now includes `id` and `canvasId` for each node so saved connections have stable refs.
   function buildWorkflowPayload({ name = "Untitled", description = "", nodesArr = nodes, conns = connections } = {}) {
-    const mappedNodes = nodesArr.map((n) => ({
-      canvasId: n.id || n.canvasId,
-      type: n.type,
-      label: n.label,
-      position: { x: n.x, y: n.y },
-      width: n.width,
-      height: n.height,
-      data: n.data || {},
-      lambdaName: n.lambdaName || (n.data?.lambdaName) || "",
-      status: n.status || "draft",
-    }));
+    const mappedNodes = nodesArr.map((n) => {
+      // ensure we always persist an id/canvasId
+      const normalizedId = n.id || n.canvasId || `n_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
+      return {
+        id: normalizedId,
+        canvasId: normalizedId,
+        type: n.type || "task",
+        label: n.label || "",
+        position: { x: n.x || 0, y: n.y || 0 },
+        width: n.width || 160,
+        height: n.height || 64,
+        data: n.data || {},
+        lambdaName: n.lambdaName || (n.data?.lambdaName) || "",
+        status: n.status || "draft",
+      };
+    });
 
     const mappedConns = conns.map((c) => ({
       source: c.from,
@@ -163,8 +169,14 @@ export default function CanvasArea() {
       const res = await axios.get(`${API_BASE}/workflows`);
       const wfList = res.data || [];
 
-      const getId = (w) => w._id?.$oid || w._id?.toString() || w.id;
-      const wf = wfList.find((w) => getId(w) === id);
+      const getId = (w) => {
+        if (!w) return null;
+        if (typeof w._id === "object" && w._id.$oid) return w._id.$oid;
+        if (typeof w._id === "string") return w._id;
+        if (typeof w.id === "string") return w.id;
+        return null;
+      };
+      const wf = wfList.find((w) => getId(w) === id || (w.id && w.id === id));
 
       if (!wf) return alert("Workflow not found. Check ID.");
       populateFromWorkflow(wf);
@@ -174,52 +186,76 @@ export default function CanvasArea() {
     }
   }
 
-function populateFromWorkflow(wf) {
-  if (!wf) return;
+  // robust populate: map any saved id/canvasId/_id -> normalized id before creating connections
+  function populateFromWorkflow(wf) {
+    if (!wf) return;
 
-  // Step 1: Normalize nodes
-  const loadedNodes = (wf.nodes || []).map((n) => {
-    const id = n.id || n.canvasId || `n_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
-    return {
-      ...n,
-      id,
-      canvasId: id,
-      x: n.position?.x || 0,
-      y: n.position?.y || 0,
-      width: n.width || 160,
-      height: n.height || 64,
-      data: n.data || {},
-      lambdaName: n.lambdaName || n.data?.lambdaName || "",
-      status: n.status || "draft",
-    };
-  });
+    // 1) Build loadedNodes with guaranteed ids
+    const loadedNodes = (wf.nodes || []).map((n, idx) => {
+      // try many possible id sources
+      const originalId = n.id || n.canvasId || (n._id && (typeof n._id === "object" ? n._id.$oid : n._id)) || n._key || n.name || null;
+      const id = originalId || `n_loaded_${Date.now()}_${idx}_${Math.random().toString(36).substr(2,4)}`;
 
-  // Step 2: Build a map of old IDs -> new IDs
-  const idMap = {};
-  (wf.nodes || []).forEach((n, idx) => {
-    const normalizedId = loadedNodes[idx].id;
-    idMap[n.id || n.canvasId] = normalizedId;
-  });
+      return {
+        id,
+        canvasId: id,
+        type: n.type || "task",
+        label: n.label || n.name || "",
+        x: Number(n.position?.x ?? n.x ?? 0),
+        y: Number(n.position?.y ?? n.y ?? 0),
+        width: n.width || 160,
+        height: n.height || 64,
+        data: n.data || (n.config || {}),
+        lambdaName: n.lambdaName || (n.data?.lambdaName) || (n.config && n.config.functionName) || "",
+        status: n.status || "draft",
+      };
+    });
 
-  // Step 3: Remap connections using idMap
-  const loadedConns = (wf.connections || [])
-    .map((c) => {
-      const from = idMap[c.source];
-      const to = idMap[c.target];
+    // 2) Build mapping from any original identifiers -> our normalized id
+    const idMap = {};
+    (wf.nodes || []).forEach((n, idx) => {
+      const normalized = loadedNodes[idx].id;
+      // collect candidates
+      const candidates = new Set();
+      if (n.id) candidates.add(n.id);
+      if (n.canvasId) candidates.add(n.canvasId);
+      if (n._id) candidates.add(typeof n._id === "object" ? n._id.$oid : n._id);
+      if (n.name) candidates.add(n.name);
+      // sometimes backend stored 'id' inside config or data
+      if (n.config && n.config.functionName) candidates.add(n.config.functionName);
+      if (n.data && n.data.id) candidates.add(n.data.id);
+      // map all non-empty candidates
+      candidates.forEach((c) => { if (c) idMap[String(c)] = normalized; });
+      // also map the normalized to itself
+      idMap[normalized] = normalized;
+    });
+
+    // 3) Remap connections
+    const loadedConns = (wf.connections || []).map((c) => {
+      const sourceKey = c.source ?? c.from;
+      const targetKey = c.target ?? c.to;
+      const from = sourceKey != null ? (idMap[String(sourceKey)] || idMap[String(sourceKey).replace(/^"#|"#$/g, "")]) : null;
+      const to = targetKey != null ? (idMap[String(targetKey)] || idMap[String(targetKey).replace(/^"#|"#$/g, "")]) : null;
+
       if (!from || !to) {
-        console.warn("Connection render skipped — node missing:", c);
+        console.warn("Connection render skipped — node missing (will try literal match):", { raw: c, fromResolved: from, toResolved: to });
+        // Try literal fallback: maybe the connection stored the id exactly as expected (already normalized)
+        const fromLiteral = loadedNodes.find(n => n.id === sourceKey) ? sourceKey : null;
+        const toLiteral = loadedNodes.find(n => n.id === targetKey) ? targetKey : null;
+        if (fromLiteral && toLiteral) return { from: fromLiteral, to: toLiteral, label: c.label || "" };
         return null;
       }
       return { from, to, label: c.label || "" };
-    })
-    .filter(Boolean);
+    }).filter(Boolean);
 
-  setNodes(loadedNodes);
-  setConnections(loadedConns);
-  setSelectedNodeIds([]);
-  alert("Workflow loaded: " + (wf.name || wf._id || wf.id || ""));
-}
-
+    // 4) Apply to state
+    setNodes(loadedNodes);
+    setConnections(loadedConns);
+    setSelectedNodeIds([]);
+    console.log("Loaded nodes:", loadedNodes);
+    console.log("Loaded connections:", loadedConns);
+    alert("Workflow loaded: " + (wf.name || wf._id || wf.id || ""));
+  }
 
   async function runWorkflowById(id) {
     if (!id) return alert("Enter workflow id to run in the input box");
@@ -267,8 +303,8 @@ function populateFromWorkflow(wf) {
                 console.warn("Connection render skipped — node missing:", conn);
                 return null;
               }
-              const start = { x: fromNode.x + fromNode.width / 2, y: fromNode.y + fromNode.height / 2 };
-              const end = { x: toNode.x + toNode.width / 2, y: toNode.y + toNode.height / 2 };
+              const start = { x: fromNode.x + (fromNode.width || 160) / 2, y: fromNode.y + (fromNode.height || 64) / 2 };
+              const end = { x: toNode.x + (toNode.width || 160) / 2, y: toNode.y + (toNode.height || 64) / 2 };
               const deltaX = Math.abs(end.x - start.x) / 2;
               const pathD = `M${start.x},${start.y} C${start.x + deltaX},${start.y} ${end.x - deltaX},${end.y} ${end.x},${end.y}`;
               const midX = (start.x + end.x) / 2;
