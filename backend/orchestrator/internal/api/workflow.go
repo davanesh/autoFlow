@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Davanesh/auto-orchestrator/internal/db"
@@ -149,21 +150,23 @@ func RunWorkflow(c *gin.Context) {
 	}
 
 	// Build nodes
-	for _, n := range wf.Nodes {
-		execNode := &services.ExecNode{
-			ID:     n.CanvasID,
-			Type:   normalizeNodeType(n.Type),
-			Label:  n.Label,
-			Data:   n.Data,
-			Status: "pending",
-			Next:   []string{},
-		}
-		graph.Nodes[n.CanvasID] = execNode
+graph.Start = "" // reset
+for _, n := range wf.Nodes {
+  execNode := &services.ExecNode{
+    ID:     n.CanvasID,
+    Type:   normalizeNodeType(n.Type),
+    Label:  n.Label,
+    Data:   n.Data,
+    Status: "pending",
+		Next:   []string{},
+  }
+  graph.Nodes[n.CanvasID] = execNode
+    // Flexible check
+  if n.Type != "" && (strings.ToLower(n.Type) == "start") {        
+		graph.Start = n.CanvasID
+  }
+}
 
-		if n.Type == "Start" || n.Type == "start" {
-			graph.Start = n.CanvasID
-		}
-	}
 
 	// Build edges (connections)
 	for _, c2 := range wf.Connections {

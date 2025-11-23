@@ -37,5 +37,5 @@ func InitDB() {
 
 // GetCollection returns a MongoDB collection
 func GetCollection(name string) *mongo.Collection {
-	return client.Database("auto_orchestrator").Collection(name)
+  return client.Database("auto_orchestrator").Collection(name)
 }
