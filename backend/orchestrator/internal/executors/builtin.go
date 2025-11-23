@@ -47,4 +47,5 @@ func init() {
 	services.RegisterExecutor("start", &StartExecutor{})
 	services.RegisterExecutor("task", &TaskExecutor{})
 	services.RegisterExecutor("decision", &DecisionExecutor{})
+	services.RegisterExecutor("ai", &AIExecutor{})
 }

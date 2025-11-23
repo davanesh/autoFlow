@@ -133,7 +133,9 @@ func RunWorkflow(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
+	// -------------------------------
 	// Load workflow from DB
+	// -------------------------------
 	var wf models.Workflow
 	if err := collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
@@ -141,34 +143,33 @@ func RunWorkflow(c *gin.Context) {
 	}
 
 	// -------------------------------
-	// 1) Convert Workflow → ExecGraph
+	// Convert workflow → ExecGraph
 	// -------------------------------
-
 	graph := services.ExecGraph{
 		Nodes: map[string]*services.ExecNode{},
 		Start: "",
 	}
 
-	// Build nodes
-graph.Start = "" // reset
-for _, n := range wf.Nodes {
-  execNode := &services.ExecNode{
-    ID:     n.CanvasID,
-    Type:   normalizeNodeType(n.Type),
-    Label:  n.Label,
-    Data:   n.Data,
-    Status: "pending",
-		Next:   []string{},
-  }
-  graph.Nodes[n.CanvasID] = execNode
-    // Flexible check
-  if n.Type != "" && (strings.ToLower(n.Type) == "start") {        
-		graph.Start = n.CanvasID
-  }
-}
+	graph.Start = ""
 
+	for _, n := range wf.Nodes {
+		execNode := &services.ExecNode{
+			ID:     n.CanvasID,
+			Type:   normalizeNodeType(n.Type),
+			Label:  n.Label,
+			Data:   n.Data,
+			Status: "pending",
+			Next:   []string{},
+		}
 
-	// Build edges (connections)
+		graph.Nodes[n.CanvasID] = execNode
+
+		if strings.ToLower(n.Type) == "start" {
+			graph.Start = n.CanvasID
+		}
+	}
+
+	// Connections
 	for _, c2 := range wf.Connections {
 		if node, exists := graph.Nodes[c2.Source]; exists {
 			node.Next = append(node.Next, c2.Target)
@@ -181,29 +182,30 @@ for _, n := range wf.Nodes {
 	}
 
 	// -------------------------------
-	// 2) Run workflow engine
+	// Run execution engine
 	// -------------------------------
-
 	log.Println("🔥 Running NEW EXECUTION ENGINE...")
 
 	err = services.RunWorkflow(&graph)
 	if err != nil {
+		log.Println("❌ Engine error:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// -------------------------------
-	// 3) Sync results back to DB
+	// Sync results (Status + AI output)
 	// -------------------------------
-
 	for i := range wf.Nodes {
 		if updated, ok := graph.Nodes[wf.Nodes[i].CanvasID]; ok {
 			wf.Nodes[i].Status = updated.Status
+			wf.Nodes[i].Data = updated.Data // 🔥 AI OUTPUT SAVED HERE
 		}
 	}
 
 	wf.Status = "completed"
 
+	// Save to DB
 	_, err = collection.UpdateOne(ctx, bson.M{"_id": objectID}, bson.M{
 		"$set": bson.M{
 			"nodes":  wf.Nodes,
@@ -216,10 +218,7 @@ for _, n := range wf.Nodes {
 		return
 	}
 
-	// -------------------------------
-	// 4) Response
-	// -------------------------------
-
+	// Final response
 	c.JSON(http.StatusOK, gin.H{
 		"workflowId": wf.ID.Hex(),
 		"status":     wf.Status,
@@ -229,15 +228,18 @@ for _, n := range wf.Nodes {
 
 // Normalizes frontend type → backend type
 func normalizeNodeType(t string) string {
+	t = strings.ToLower(strings.TrimSpace(t))
 	switch t {
-	case "Start", "start":
+	case "start":
 		return "start"
-	case "Task", "task", "LambdaTask":
+	case "task":
 		return "task"
-	case "Decision", "decision":
+	case "decision":
 		return "decision"
+	case "ai":
+		return "ai"
 	}
-	return "task"
+  return "task"
 }
 
 

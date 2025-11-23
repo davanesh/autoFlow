@@ -1,6 +1,5 @@
-import React from "react";
 import Topbar from "../components/Topbar";
-import Sidebar from "../components/Siderbr";
+import Sidebar from "../components/Siderbar";
 import CanvasArea from "../components/CanvasArea";
 
 export default function WorkflowBuilder() {

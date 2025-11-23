@@ -1,10 +1,11 @@
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import axios from "axios";
 import NodeCard from "./NodeCard";
 import PropertiesPanel from "./PropertiesPanel";
 
 const GRID_SIZE = 20;
 const API_BASE = import.meta.env.VITE_API_BASE;
+console.log(import.meta.env.VITE_API_BASE);
 
 export default function CanvasArea() {
   const [nodes, setNodes] = useState([]);

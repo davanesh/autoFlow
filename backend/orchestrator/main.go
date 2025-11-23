@@ -5,7 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-
+	
+	_ "github.com/Davanesh/auto-orchestrator/internal/executors"
 	"github.com/Davanesh/auto-orchestrator/internal/api"
 	"github.com/Davanesh/auto-orchestrator/internal/db"
 	"github.com/gin-contrib/cors"

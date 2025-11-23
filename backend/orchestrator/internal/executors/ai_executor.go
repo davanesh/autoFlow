@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -11,119 +13,93 @@ import (
 	"github.com/Davanesh/auto-orchestrator/internal/services"
 )
 
-/*
-------------------------------------------
-    AI EXECUTOR (OpenAI API)
-------------------------------------------
-*/
+type AIExecutor struct{}
 
-type AiExecutor struct {
-	httpClient *http.Client
-}
+func (e *AIExecutor) Execute(node *services.ExecNode, g *services.ExecGraph) (string, error) {
+	prompt := fmt.Sprintf("%v", node.Data["prompt"])
+	input := fmt.Sprintf("%v", node.Data["input"])
 
-func NewAiExecutor() *AiExecutor {
-	return &AiExecutor{
-		httpClient: &http.Client{},
-	}
-}
-
-// OpenAI request structure
-type openAIChatReq struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
-}
-
-type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// OpenAI response structure
-type openAIChatResp struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-}
-
-func (e *AiExecutor) Execute(node *services.ExecNode, g *services.ExecGraph) (string, error) {
-
-	// Get AI prompt
-	prompt, ok := node.Data["prompt"].(string)
-	if !ok || prompt == "" {
-		return "", errors.New("AI node requires a 'prompt' field")
+	if prompt == "" && input == "" {
+		return "", errors.New("AI node requires 'prompt' or 'input'")
 	}
 
-	// Get user input
-	input, _ := node.Data["input"].(string)
-
-	// Fetch the OpenAI key from env
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		return "", errors.New("missing OPENAI_API_KEY (add it to .env)")
+		return "", errors.New("missing OPENAI_API_KEY")
 	}
 
-	log.Println("🤖 Running AI Node:", node.Label)
-
-	reqBody := openAIChatReq{
-		Model: "gpt-4o-mini", // cheap + fast model
-		Messages: []chatMessage{
-			{Role: "system", Content: prompt},
-			{Role: "user", Content: input},
+	// NEW OPENAI RESPONSES API FORMAT (2025)
+	body := map[string]interface{}{
+		"model": "gpt-4.1-mini",
+		"input": []map[string]interface{}{
+			{
+				"role": "system",
+				"content": []map[string]string{
+					{"type": "input_text", "text": prompt},
+				},
+			},
+			{
+				"role": "user",
+				"content": []map[string]string{
+					{"type": "input_text", "text": input},
+				},
+			},
 		},
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", err
-	}
+	jsonBody, _ := json.Marshal(body)
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-
+	req, _ := http.NewRequest("POST", "https://api.openai.com/v1/responses", bytes.NewBuffer(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := e.httpClient.Do(req)
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	var aiResp openAIChatResp
-	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
-		return "", err
+	// READ RESPONSE
+	respBytes, _ := io.ReadAll(resp.Body)
+	log.Println("🔍 RAW OpenAI Response:", string(respBytes))
+
+	var out struct {
+		Output []struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
 	}
 
-	if len(aiResp.Choices) == 0 {
-		return "", errors.New("AI returned no message")
+	json.Unmarshal(respBytes, &out)
+
+	// Extract output_text
+	var final string
+	if len(out.Output) > 0 && len(out.Output[0].Content) > 0 {
+		for _, c := range out.Output[0].Content {
+			if c.Type == "output_text" {
+				final += c.Text
+			}
+		}
 	}
 
-	output := aiResp.Choices[0].Message.Content
+	if final == "" {
+		return "", errors.New("OpenAI returned no output_text")
+	}
 
-	// Save result for next nodes
-	node.Data["output"] = output
+	// SAVE OUTPUT INTO WORKFLOW NODE
+	node.Data["output"] = final
 	node.Status = "done"
-
-	log.Println("🤖 AI Output:", output)
-
-	// Move to next node
-	if len(node.Next) > 0 {
-		return node.Next[0], nil
-	}
 
 	return "", nil
 }
 
-/*
------------------------------------
-   Register AI executor globally
------------------------------------
-*/
 
+// IMPORTANT: Without this your AI node NEVER runs
 func init() {
-  services.RegisterExecutor("ai", NewAiExecutor())
+	fmt.Println("🔥 AI Executor Registered!")
+	services.RegisterExecutor("ai", &AIExecutor{})
 }
+

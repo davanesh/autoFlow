@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import { useRef } from "react";
 import { ArrowRight } from "lucide-react";
 
 const NodeCard = ({
@@ -23,7 +23,10 @@ const NodeCard = ({
         width: `${node.width}px`,
         height: `${node.height}px`,
         userSelect: "none",
-        backgroundColor: node.color || "#ffffff", // ✅ Add this line
+        backgroundColor:
+        node.type === "ai"
+        ? "#e8d5ff"     // light purple
+        : node.color || "#fff",
         transition: "background-color 0.2s ease",
       }}
       className={`rounded-lg shadow-md border ${

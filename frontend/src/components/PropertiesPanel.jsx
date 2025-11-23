@@ -68,6 +68,35 @@ export default function PropertiesPanel({ node, connections, onUpdateConnection,
           ))}
         </div>
       )}
+      {/* AI NODE FIELDS */}
+    {node.type === "ai" && (
+      <div className="space-y-2 mt-3">
+        
+        <label className="text-xs font-semibold text-gray-600">AI Prompt</label>
+        <textarea
+          className="w-full border rounded p-2 text-sm"
+          value={node.data?.prompt || ""}
+          onChange={(e) =>
+            onUpdateNode({
+              ...node,
+              data: { ...node.data, prompt: e.target.value }
+            })
+          }
+        />
+
+        <label className="text-xs font-semibold text-gray-600">AI Input</label>
+        <textarea
+          className="w-full border rounded p-2 text-sm"
+          value={node.data?.input || ""}
+          onChange={(e) =>
+            onUpdateNode({
+              ...node,
+              data: { ...node.data, input: e.target.value }
+            })
+          }
+        />
+      </div>
+    )}
     </div>
   );
 }

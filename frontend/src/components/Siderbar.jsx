@@ -1,10 +1,13 @@
-import React from "react";
-
 const TOOL_ITEMS = [
   { id: "task", label: "Task" },
   { id: "decision", label: "Decision" },
   { id: "start", label: "Start" },
   { id: "end", label: "End" },
+  { 
+    id: "ai",
+    label: "AI Node",
+    data: { prompt: "Write AI prompt", input: "" }
+  },
 ];
 
 export default function Sidebar() {
