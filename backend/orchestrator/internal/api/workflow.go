@@ -19,6 +19,7 @@ import (
 
 func RegisterWorkflowRoutes(r *gin.Engine) {
 	r.GET("/workflows", GetWorkflows)
+	r.GET("/workflows/:id", GetWorkflowByID)
 	r.POST("/workflows", CreateWorkflow)
 	r.PUT("/workflows/:id", UpdateWorkflowStatus)
 	r.POST("/workflows/:id/run", RunWorkflow)
@@ -90,6 +91,32 @@ func GetWorkflows(c *gin.Context) {
 
 	c.JSON(http.StatusOK, workflows)
 }
+
+// ---------------- GET WORKFLOW BY ID ----------------
+
+func GetWorkflowByID(c *gin.Context) {
+    id := c.Param("id")
+
+    objectID, err := primitive.ObjectIDFromHex(id)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow ID"})
+        return
+    }
+
+    collection := db.GetCollection("workflows")
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    var wf models.Workflow
+    err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf)
+    if err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
+        return
+    }
+
+    c.JSON(http.StatusOK, wf)
+}
+
 
 // ---------------- CREATE WORKFLOW ----------------
 
