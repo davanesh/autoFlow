@@ -24,4 +24,5 @@ type ExecNode struct {
 type ExecGraph struct {
 	Nodes map[string]*ExecNode
 	Start string
+	RunID string
 }

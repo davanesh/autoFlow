@@ -172,11 +172,12 @@ func RunWorkflow(c *gin.Context) {
 	// -------------------------------
 	// Convert workflow → ExecGraph
 	// -------------------------------
+	// create graph and set a unique RunID (use Mongo object id for traceability)
 	graph := services.ExecGraph{
 		Nodes: map[string]*services.ExecNode{},
 		Start: "",
+		RunID: primitive.NewObjectID().Hex(),
 	}
-
 	graph.Start = ""
 
 	for _, n := range wf.Nodes {
@@ -265,10 +266,17 @@ func normalizeNodeType(t string) string {
 		return "decision"
 	case "ai":
 		return "ai"
+	case "wait":
+		return "wait"
+	case "whatsapp_wait":
+		return "whatsapp_wait"
+	case "whatsapp_static_reply":
+		return "whatsapp_static_reply"
+	case "whatsapp_send":
+		return "whatsapp_send"
 	}
-  return "task"
+	return "task"
 }
-
 
 // ---------------- SAVE WORKFLOW STRUCTURE ----------------
 
