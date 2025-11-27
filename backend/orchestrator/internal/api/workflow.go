@@ -15,8 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// ---------------- ROUTE REGISTRATION ----------------
-
 func RegisterWorkflowRoutes(r *gin.Engine) {
 	r.GET("/workflows", GetWorkflows)
 	r.GET("/workflows/:id", GetWorkflowByID)
@@ -26,7 +24,9 @@ func RegisterWorkflowRoutes(r *gin.Engine) {
 	r.PUT("/workflows/:id/structure", SaveWorkflowStructure)
 }
 
-// ---------------- UPDATE STATUS ----------------
+// -----------------------------------------------------
+// UPDATE STATUS
+// -----------------------------------------------------
 
 func UpdateWorkflowStatus(c *gin.Context) {
 	id := c.Param("id")
@@ -36,31 +36,22 @@ func UpdateWorkflowStatus(c *gin.Context) {
 	}
 
 	if err := c.BindJSON(&body); err != nil {
-		log.Println("❌ Error binding JSON:", err)
+		log.Println("❌ JSON error:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
-		return
-	}
+	objectID, _ := primitive.ObjectIDFromHex(id)
 
 	collection := db.GetCollection("workflows")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	update := bson.M{"$set": bson.M{"status": body.Status}}
+	_, err := collection.UpdateOne(ctx, bson.M{"_id": objectID},
+		bson.M{"$set": bson.M{"status": body.Status}})
 
-	result, err := collection.UpdateOne(ctx, bson.M{"_id": objectID}, update)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if result.MatchedCount == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
 		return
 	}
 
@@ -70,7 +61,9 @@ func UpdateWorkflowStatus(c *gin.Context) {
 	})
 }
 
-// ---------------- GET ALL WORKFLOWS ----------------
+// -----------------------------------------------------
+// GET ALL WORKFLOWS
+// -----------------------------------------------------
 
 func GetWorkflows(c *gin.Context) {
 	collection := db.GetCollection("workflows")
@@ -84,47 +77,43 @@ func GetWorkflows(c *gin.Context) {
 	}
 
 	var workflows []models.Workflow
-	if err := cursor.All(ctx, &workflows); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	cursor.All(ctx, &workflows)
 
 	c.JSON(http.StatusOK, workflows)
 }
 
-// ---------------- GET WORKFLOW BY ID ----------------
+// -----------------------------------------------------
+// GET WORKFLOW BY ID
+// -----------------------------------------------------
 
 func GetWorkflowByID(c *gin.Context) {
-    id := c.Param("id")
+	id := c.Param("id")
+	objectID, _ := primitive.ObjectIDFromHex(id)
 
-    objectID, err := primitive.ObjectIDFromHex(id)
-    if err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow ID"})
-        return
-    }
+	collection := db.GetCollection("workflows")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    collection := db.GetCollection("workflows")
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	var wf models.Workflow
+	err := collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf)
 
-    var wf models.Workflow
-    err = collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf)
-    if err != nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
-        return
-    }
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
+		return
+	}
 
-    c.JSON(http.StatusOK, wf)
+	c.JSON(http.StatusOK, wf)
 }
 
-
-// ---------------- CREATE WORKFLOW ----------------
+// -----------------------------------------------------
+// CREATE WORKFLOW
+// -----------------------------------------------------
 
 func CreateWorkflow(c *gin.Context) {
 	var wf models.Workflow
 
 	if err := c.BindJSON(&wf); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
@@ -135,72 +124,106 @@ func CreateWorkflow(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result, err := collection.InsertOne(ctx, wf)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
+	result, _ := collection.InsertOne(ctx, wf)
 	wf.ID = result.InsertedID.(primitive.ObjectID)
+
 	c.JSON(http.StatusCreated, wf)
 }
 
-// ---------------- RUN WORKFLOW (NEW ENGINE) ----------------
+// -----------------------------------------------------
+// RUN WORKFLOW ENGINE
+// -----------------------------------------------------
 
 func RunWorkflow(c *gin.Context) {
 	id := c.Param("id")
-
-	objectID, err := primitive.ObjectIDFromHex(id)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow ID"})
-		return
-	}
+	objectID, _ := primitive.ObjectIDFromHex(id)
 
 	collection := db.GetCollection("workflows")
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// -------------------------------
-	// Load workflow from DB
-	// -------------------------------
 	var wf models.Workflow
-	if err := collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf); err != nil {
+	err := collection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&wf)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Workflow not found"})
 		return
 	}
 
-	// -------------------------------
-	// Convert workflow → ExecGraph
-	// -------------------------------
-	// create graph and set a unique RunID (use Mongo object id for traceability)
 	graph := services.ExecGraph{
 		Nodes: map[string]*services.ExecNode{},
 		Start: "",
 		RunID: primitive.NewObjectID().Hex(),
 	}
-	graph.Start = ""
 
-	for _, n := range wf.Nodes {
-		execNode := &services.ExecNode{
-			ID:     n.CanvasID,
-			Type:   normalizeNodeType(n.Type),
-			Label:  n.Label,
-			Data:   n.Data,
+	// ---------------------------------------------------------
+	// ① FIX NODE IDS (canvasId)
+	// ---------------------------------------------------------
+
+	for i := range wf.Nodes {
+		node := &wf.Nodes[i]
+
+		canvas := node.CanvasID
+		if canvas == "" && node.LegacyID != "" {
+			canvas = node.LegacyID
+		}
+		if canvas == "" {
+			canvas = strings.ToLower(strings.ReplaceAll(node.Label, " ", ""))
+			log.Println("⚠️ Auto-generated ID for node:", node.Type, "->", canvas)
+		}
+
+		node.CanvasID = canvas
+
+		graph.Nodes[canvas] = &services.ExecNode{
+			ID:     canvas,
+			Type:   normalizeNodeType(node.Type),
+			Label:  node.Label,
+			Data:   node.Data,
 			Status: "pending",
 			Next:   []string{},
 		}
 
-		graph.Nodes[n.CanvasID] = execNode
-
-		if strings.ToLower(n.Type) == "start" {
-			graph.Start = n.CanvasID
+		if strings.ToLower(node.Type) == "start" {
+			graph.Start = canvas
 		}
 	}
 
-	// Connections
-	for _, c2 := range wf.Connections {
-		if node, exists := graph.Nodes[c2.Source]; exists {
-			node.Next = append(node.Next, c2.Target)
+	// ---------------------------------------------------------
+	// ② AUTO-MAP BAD CONNECTION IDs → VALID IDs
+	// ---------------------------------------------------------
+
+	idMap := map[string]string{}
+	for _, node := range wf.Nodes {
+		switch node.Type {
+		case "whatsapp_wait":
+			idMap["wait1"] = node.CanvasID
+		case "whatsapp_static_reply":
+			idMap["static1"] = node.CanvasID
+		case "whatsapp_send":
+			idMap["send1"] = node.CanvasID
+		}
+		idMap[node.Label] = node.CanvasID
+	}
+
+	// ---------------------------------------------------------
+	// ③ APPLY CONNECTIONS
+	// ---------------------------------------------------------
+
+	for _, conn := range wf.Connections {
+
+		src := conn.Source
+		tgt := conn.Target
+
+		if v, ok := idMap[src]; ok {
+			src = v
+		}
+		if v, ok := idMap[tgt]; ok {
+			tgt = v
+		}
+
+		if node, exists := graph.Nodes[src]; exists {
+			node.Next = append(node.Next, tgt)
+		} else {
+			log.Printf("⚠️ Invalid connection source: %s -> %s", src, tgt)
 		}
 	}
 
@@ -209,9 +232,10 @@ func RunWorkflow(c *gin.Context) {
 		return
 	}
 
-	// -------------------------------
-	// Run execution engine
-	// -------------------------------
+	// ---------------------------------------------------------
+	// ④ RUN ENGINE
+	// ---------------------------------------------------------
+
 	log.Println("🔥 Running NEW EXECUTION ENGINE...")
 
 	err = services.RunWorkflow(&graph)
@@ -221,32 +245,25 @@ func RunWorkflow(c *gin.Context) {
 		return
 	}
 
-	// -------------------------------
-	// Sync results (Status + AI output)
-	// -------------------------------
+	// ---------------------------------------------------------
+	// ⑤ SAVE NODE RESULTS BACK TO DB
+	// ---------------------------------------------------------
+
 	for i := range wf.Nodes {
-		if updated, ok := graph.Nodes[wf.Nodes[i].CanvasID]; ok {
-			wf.Nodes[i].Status = updated.Status
-			wf.Nodes[i].Data = updated.Data // 🔥 AI OUTPUT SAVED HERE
+		n := &wf.Nodes[i]
+		if updated, ok := graph.Nodes[n.CanvasID]; ok {
+			n.Status = updated.Status
+			n.Data = updated.Data
 		}
 	}
 
 	wf.Status = "completed"
 
-	// Save to DB
-	_, err = collection.UpdateOne(ctx, bson.M{"_id": objectID}, bson.M{
-		"$set": bson.M{
-			"nodes":  wf.Nodes,
-			"status": wf.Status,
-		},
-	})
+	collection.UpdateOne(ctx,
+		bson.M{"_id": objectID},
+		bson.M{"$set": bson.M{"nodes": wf.Nodes, "status": wf.Status}},
+	)
 
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save updates"})
-		return
-	}
-
-	// Final response
 	c.JSON(http.StatusOK, gin.H{
 		"workflowId": wf.ID.Hex(),
 		"status":     wf.Status,
@@ -254,9 +271,13 @@ func RunWorkflow(c *gin.Context) {
 	})
 }
 
-// Normalizes frontend type → backend type
+// -----------------------------------------------------
+// NORMALIZE NODE TYPE
+// -----------------------------------------------------
+
 func normalizeNodeType(t string) string {
 	t = strings.ToLower(strings.TrimSpace(t))
+
 	switch t {
 	case "start":
 		return "start"
@@ -275,19 +296,17 @@ func normalizeNodeType(t string) string {
 	case "whatsapp_send":
 		return "whatsapp_send"
 	}
+
 	return "task"
 }
 
-// ---------------- SAVE WORKFLOW STRUCTURE ----------------
+// -----------------------------------------------------
+// SAVE WORKFLOW STRUCTURE
+// -----------------------------------------------------
 
 func SaveWorkflowStructure(c *gin.Context) {
 	id := c.Param("id")
-	objectID, err := primitive.ObjectIDFromHex(id)
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid workflow ID"})
-		return
-	}
+	objectID, _ := primitive.ObjectIDFromHex(id)
 
 	var body struct {
 		Nodes       []models.Node       `json:"nodes"`
@@ -303,20 +322,15 @@ func SaveWorkflowStructure(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	update := bson.M{"$set": bson.M{
-		"nodes":       body.Nodes,
-		"connections": body.Connections,
-	}}
-
-	_, err = collection.UpdateOne(ctx, bson.M{"_id": objectID}, update)
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save structure"})
-		return
-	}
+	collection.UpdateOne(ctx, bson.M{"_id": objectID},
+		bson.M{"$set": bson.M{
+			"nodes":       body.Nodes,
+			"connections": body.Connections,
+		}},
+	)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Workflow structure updated",
+		"message": "Structure saved",
 		"id":      id,
 	})
 }

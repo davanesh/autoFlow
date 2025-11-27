@@ -34,13 +34,19 @@ type Task struct {
 
 // Node represents a canvas node (frontend ID is preserved in CanvasID)
 type Node struct {
-	CanvasID   string                 `bson:"canvasId,omitempty" json:"id,omitempty"`
-	Type       string                 `bson:"type" json:"type"`
-	Label      string                 `bson:"label,omitempty" json:"label,omitempty"`
-	Position   map[string]float64     `bson:"position,omitempty" json:"position,omitempty"`
-	Data       map[string]interface{} `bson:"data,omitempty" json:"data,omitempty"`
-	Status     string                 `bson:"status,omitempty" json:"status,omitempty"`
-	LambdaName string                 `bson:"lambdaName,omitempty" json:"lambdaName,omitempty"`
+    // CanvasID is the frontend id we normally use. It maps to BSON field "canvasId".
+    CanvasID   string                 `bson:"canvasId,omitempty" json:"id,omitempty"`
+
+    // LegacyID will capture nodes stored with "id" in BSON (older save variations).
+    // It's ignored for JSON output but read from BSON so we can migrate at runtime.
+    LegacyID   string                 `bson:"id,omitempty" json:"-"`
+
+    Type       string                 `bson:"type" json:"type"`
+    Label      string                 `bson:"label,omitempty" json:"label,omitempty"`
+    Position   map[string]float64     `bson:"position,omitempty" json:"position,omitempty"`
+    Data       map[string]interface{} `bson:"data,omitempty" json:"data,omitempty"`
+    Status     string                 `bson:"status,omitempty" json:"status,omitempty"`
+    LambdaName string                 `bson:"lambdaName,omitempty" json:"lambdaName,omitempty"`
 }
 
 // Connection (edge) between nodes
