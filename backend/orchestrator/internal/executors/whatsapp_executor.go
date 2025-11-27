@@ -147,9 +147,28 @@ func HandleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no run/node provided, try to find any waiter where runID or nodeID is embedded.
-	// Iterate over waiters keys and try fuzzy match by run or by containing phone as key.
+// AUTO-WAKE MODE: deliver to ANY active waiter
 	delivered := false
+
+	waiters.m.Range(func(k, v interface{}) bool {
+    if ch, ok := v.(chan string); ok {
+			select {
+			case ch <- payload.Body:
+				delivered = true
+				waiters.m.Delete(k)
+				return false // stop at first waiter
+			default:
+			}
+    }
+    return true
+	})
+
+	if delivered {
+    w.WriteHeader(http.StatusOK)
+    io.WriteString(w, "Delivered (auto-wake)")
+    return
+	}
+
 	waiters.m.Range(func(k, v interface{}) bool {
 		keyStr := k.(string) // runID:nodeID
 		parts := strings.SplitN(keyStr, ":", 2)
